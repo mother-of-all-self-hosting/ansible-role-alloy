@@ -1,0 +1,77 @@
+{#
+SPDX-FileCopyrightText: 2024 Slavi Pantaleev
+SPDX-FileCopyrightText: 2024, 2026 sudo-Tiz
+SPDX-FileCopyrightText: 2026 Suguru Hirahara
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+#}
+
+[Unit]
+Description=Alloy log agent ({{ alloy_identifier }})
+{% for service in alloy_systemd_required_services_list %}
+Requires={{ service }}
+After={{ service }}
+{% endfor %}
+{% for service in alloy_systemd_wanted_services_list %}
+Wants={{ service }}
+{% endfor %}
+DefaultDependencies=no
+
+[Service]
+Type=simple
+ExecStartPre={{ devture_systemd_docker_base_host_command_sh }} -c '{{ alloy_container_cleanup_command | trim | replace("\n", " ") }}'
+
+{#
+    When running with a different user than alloy_uid/alloy_gid, even if that user is root,
+    we need to grant CAP_DAC_READ_SEARCH so that Alloy can read its own config.
+#}
+ExecStartPre={{ devture_systemd_docker_base_host_command_docker }} create \
+      --rm \
+      --name={{ alloy_identifier }} \
+      --log-driver=none \
+      {% if alloy_container_run_as_non_root_user_enabled %}
+      --user={{ alloy_uid }}:{{ alloy_gid }} \
+      {% endif %}
+      --cap-drop=ALL \
+      {% for capability in alloy_container_capabilities_to_add %}
+      --cap-add={{ capability }} \
+      {% endfor %}
+      --read-only \
+      --network={{ alloy_container_network }} \
+      {% if alloy_container_http_host_bind_port %}
+      -p {{ alloy_container_http_host_bind_port }}:{{ alloy_config_http_listen_port }} \
+      {% endif %}
+      --env-file={{ alloy_base_path }}/env \
+      --label-file={{ alloy_base_path }}/labels \
+      --mount type=bind,src={{ alloy_config_path }},dst=/etc/alloy,ro \
+      --mount type=bind,src={{ alloy_data_path }},dst=/data \
+      {% for mount in alloy_container_additional_volumes %}
+      --mount {{ mount }} \
+      {% endfor %}
+      {% for arg in alloy_container_extra_arguments %}
+      {{ arg }} \
+      {% endfor %}
+      {{ alloy_container_image }} \
+      run \
+      --server.http.listen-addr=0.0.0.0:{{ alloy_config_http_listen_port }} \
+      --server.http.ui-path-prefix={{ alloy_path_prefix }} \
+      --storage.path=/data \
+      {% for arg in alloy_container_run_extra_arguments %}
+      {{ arg }} \
+      {% endfor %}
+      /etc/alloy/config.alloy
+
+{% for network in alloy_container_additional_networks %}
+ExecStartPre={{ devture_systemd_docker_base_host_command_docker }} network connect {{ network }} {{ alloy_identifier }}
+{% endfor %}
+
+ExecStart={{ devture_systemd_docker_base_host_command_docker }} start --attach {{ alloy_identifier }}
+
+ExecStop=-{{ devture_systemd_docker_base_host_command_sh }} -c '{{ devture_systemd_docker_base_host_command_docker }} stop -t {{ devture_systemd_docker_base_container_stop_grace_time_seconds }} {{ alloy_identifier }} 2>/dev/null || true'
+ExecStop=-{{ devture_systemd_docker_base_host_command_sh }} -c '{{ devture_systemd_docker_base_host_command_docker }} rm {{ alloy_identifier }} 2>/dev/null || true'
+Restart=always
+RestartSec=30
+SyslogIdentifier={{ alloy_identifier }}
+
+[Install]
+WantedBy=multi-user.target

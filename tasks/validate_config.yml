@@ -1,0 +1,50 @@
+# SPDX-FileCopyrightText: 2024 Slavi Pantaleev
+# SPDX-FileCopyrightText: 2024, 2026 sudo-Tiz
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+---
+- name: Fail if required Alloy settings not defined
+  ansible.builtin.fail:
+    msg: >-
+      You need to define a required configuration setting (`{{ item }}`).
+  when: "lookup('vars', item, default='') | string | length == 0"
+  with_items:
+    - alloy_uid
+    - alloy_gid
+    - alloy_path_prefix
+    - alloy_container_network
+
+- name: Fail if no Alloy clients are defined
+  ansible.builtin.fail:
+    msg: >-
+      You need to define at least one client (like Grafana Loki) where Alloy would push logs to.
+      See `alloy_config_clients_custom`.
+  when: "alloy_config_clients | length == 0"
+
+- name: Run if Traefik is enabled
+  when: alloy_container_labels_traefik_enabled | bool
+  block:
+    - name: Run if Traefik is enabled for Alloy API
+      when: alloy_container_labels_traefik_api_enabled | bool
+      block:
+        - name: Fail if Traefik settings required for Alloy API are not defined
+          ansible.builtin.fail:
+            msg: >-
+              You need to define a required configuration setting (`{{ item.name }}`).
+          when: "item.when | bool and lookup('vars', item.name, default='') | string | length == 0"
+          with_items:
+            - { "name": "alloy_container_labels_traefik_api_hostname", when: true }
+            - { "name": "alloy_container_labels_traefik_api_traefik_middleware_basic_auth_users", when: "{{ alloy_container_labels_traefik_api_traefik_middleware_basic_auth_enabled }}" }
+
+    - name: Run if Traefik is enabled for Prometheus endpoint
+      when: alloy_container_labels_traefik_metrics_enabled | bool
+      block:
+        - name: Fail if Traefik settings required for Alloy metrics endpoint are not defined
+          ansible.builtin.fail:
+            msg: >-
+              You need to define a required configuration setting (`{{ item.name }}`).
+          when: "item.when | bool and lookup('vars', item.name, default='') | string | length == 0"
+          with_items:
+            - { "name": "alloy_container_labels_traefik_metrics_hostname", when: true }
+            - { "name": "alloy_container_labels_traefik_metrics_traefik_middleware_basic_auth_users", when: "{{ alloy_container_labels_traefik_metrics_traefik_middleware_basic_auth_enabled }}" }

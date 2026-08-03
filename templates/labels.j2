@@ -1,0 +1,107 @@
+{#
+SPDX-FileCopyrightText: 2024 Slavi Pantaleev
+SPDX-FileCopyrightText: 2024, 2026 sudo-Tiz
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+#}
+
+{% if alloy_container_labels_traefik_enabled %}
+traefik.enable=true
+
+{% if alloy_container_labels_traefik_docker_network %}
+traefik.docker.network={{ alloy_container_labels_traefik_docker_network }}
+{% endif %}
+
+traefik.http.services.{{ alloy_identifier }}.loadbalancer.server.port={{ alloy_config_http_listen_port }}
+
+{% if alloy_container_labels_traefik_api_enabled %}
+############################################################
+#                                                          #
+# API                                                      #
+#                                                          #
+############################################################
+
+{% set middlewares = [] %}
+
+{% if alloy_container_labels_traefik_api_traefik_middleware_basic_auth_enabled %}
+traefik.http.middlewares.{{ alloy_identifier }}-api-auth.basicauth.users={{ alloy_container_labels_traefik_api_traefik_middleware_basic_auth_users }}
+{% set middlewares = middlewares + [alloy_identifier + '-api-auth@docker'] %}
+{% endif %}
+
+{#
+  Alloy is capable of serving its UI (and API) under a custom path prefix natively
+  (see the `--server.http.ui-path-prefix` argument passed to `alloy run` in the systemd service file),
+  so there's no need for a strip-prefix middleware here, unlike with other services.
+#}
+traefik.http.routers.{{ alloy_identifier }}-api.rule={{ alloy_container_labels_traefik_api_traefik_rule }}
+
+{% if middlewares | length > 0 %}
+traefik.http.routers.{{ alloy_identifier }}-api.middlewares={{ middlewares | join(',') }}
+{% endif %}
+
+{% if alloy_container_labels_traefik_api_traefik_priority | int > 0 %}
+traefik.http.routers.{{ alloy_identifier }}-api.priority={{ alloy_container_labels_traefik_api_traefik_priority }}
+{% endif %}
+
+traefik.http.routers.{{ alloy_identifier }}-api.service={{ alloy_identifier }}
+traefik.http.routers.{{ alloy_identifier }}-api.entrypoints={{ alloy_container_labels_traefik_api_traefik_entrypoints }}
+
+traefik.http.routers.{{ alloy_identifier }}-api.tls={{ alloy_container_labels_traefik_api_traefik_tls | to_json }}
+{% if alloy_container_labels_traefik_api_traefik_tls %}
+traefik.http.routers.{{ alloy_identifier }}-api.tls.certResolver={{ alloy_container_labels_traefik_api_traefik_tls_certResolver }}
+{% endif %}
+
+############################################################
+#                                                          #
+# /API                                                     #
+#                                                          #
+############################################################
+{% endif %}
+
+{% if alloy_container_labels_traefik_metrics_enabled %}
+############################################################
+#                                                          #
+# Metrics                                                  #
+#                                                          #
+############################################################
+
+{% set middlewares = [] %}
+
+{% if alloy_container_labels_traefik_metrics_traefik_middleware_basic_auth_enabled %}
+traefik.http.middlewares.{{ alloy_identifier }}-metrics-auth.basicauth.users={{ alloy_container_labels_traefik_metrics_traefik_middleware_basic_auth_users }}
+{% set middlewares = middlewares + [alloy_identifier + '-metrics-auth@docker'] %}
+{% endif %}
+
+traefik.http.middlewares.{{ alloy_identifier }}-metrics-replace-path.replacepath.path=/metrics
+{% set middlewares = middlewares + [alloy_identifier + '-metrics-replace-path@docker'] %}
+
+traefik.http.routers.{{ alloy_identifier }}-metrics.rule={{ alloy_container_labels_traefik_metrics_traefik_rule }}
+
+{% if middlewares | length > 0 %}
+traefik.http.routers.{{ alloy_identifier }}-metrics.middlewares={{ middlewares | join(',') }}
+{% endif %}
+
+{% if alloy_container_labels_traefik_metrics_traefik_priority | int > 0 %}
+traefik.http.routers.{{ alloy_identifier }}-metrics.priority={{ alloy_container_labels_traefik_metrics_traefik_priority }}
+{% endif %}
+
+traefik.http.routers.{{ alloy_identifier }}-metrics.service={{ alloy_identifier }}
+traefik.http.routers.{{ alloy_identifier }}-metrics.entrypoints={{ alloy_container_labels_traefik_metrics_traefik_entrypoints }}
+
+traefik.http.routers.{{ alloy_identifier }}-metrics.tls={{ alloy_container_labels_traefik_metrics_traefik_tls | to_json }}
+{% if alloy_container_labels_traefik_metrics_traefik_tls %}
+traefik.http.routers.{{ alloy_identifier }}-metrics.tls.certResolver={{ alloy_container_labels_traefik_metrics_traefik_tls_certResolver }}
+{% endif %}
+
+############################################################
+#                                                          #
+# /Metrics                                                 #
+#                                                          #
+############################################################
+{% endif %}
+
+{% endif %}
+
+{% for arg in alloy_container_labels_additional_labels %}
+{{ arg }}
+{% endfor %}

@@ -1,0 +1,98 @@
+# SPDX-FileCopyrightText: 2024 Slavi Pantaleev
+# SPDX-FileCopyrightText: 2024, 2026 sudo-Tiz
+# SPDX-FileCopyrightText: 2026 Suguru Hirahara
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+---
+- name: Ensure Alloy paths exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0700"
+    owner: "{{ alloy_uid }}"
+    group: "{{ alloy_gid }}"
+  with_items:
+    - "{{ alloy_base_path }}"
+    - "{{ alloy_config_path }}"
+    - "{{ alloy_data_path }}"
+
+- name: Ensure Alloy support files installed
+  ansible.builtin.template:
+    src: "{{ role_path }}/templates/{{ item }}.j2"
+    dest: "{{ alloy_base_path }}/{{ item }}"
+    mode: "0640"
+    owner: "{{ alloy_uid }}"
+    group: "{{ alloy_gid }}"
+  with_items:
+    - env
+    - labels
+  register: alloy_support_files_result
+
+- name: Ensure Alloy configuration file installed
+  ansible.builtin.copy:
+    content: "{{ alloy_configuration }}"
+    dest: "{{ alloy_config_path }}/config.alloy"
+    mode: "0644"
+    owner: "{{ alloy_uid }}"
+    group: "{{ alloy_gid }}"
+  register: alloy_config_file_result
+
+- name: Ensure Alloy container image is pulled via community.docker.docker_image_pull
+  when: devture_systemd_docker_base_container_image_pull_method == 'ansible-module'
+  community.docker.docker_image_pull:
+    name: "{{ alloy_container_image }}"
+    pull: always
+  register: alloy_container_image_pull_result_ansible_module
+  retries: "{{ devture_playbook_help_container_retries_count }}"
+  delay: "{{ devture_playbook_help_container_retries_delay }}"
+  until: alloy_container_image_pull_result_ansible_module is not failed
+
+- name: Ensure Alloy container image is pulled via ansible.builtin.command
+  when: devture_systemd_docker_base_container_image_pull_method == 'command'
+  ansible.builtin.command:
+    cmd: "{{ devture_systemd_docker_base_host_command_docker }} pull {{ alloy_container_image }}"
+  register: alloy_container_image_pull_result_command
+  retries: "{{ devture_playbook_help_container_retries_count }}"
+  delay: "{{ devture_playbook_help_container_retries_delay }}"
+  until: alloy_container_image_pull_result_command is not failed
+  changed_when: "'Downloaded newer image' in alloy_container_image_pull_result_command.stdout"
+
+- name: Ensure Alloy container network is created via community.docker.docker_network
+  when: devture_systemd_docker_base_container_network_creation_method == 'ansible-module'
+  community.docker.docker_network:
+    enable_ipv6: "{{ devture_systemd_docker_base_ipv6_enabled }}"
+    name: "{{ alloy_container_network }}"
+    driver: bridge
+    driver_options: "{{ devture_systemd_docker_base_container_networks_driver_options }}"
+  register: alloy_network_creation_result
+
+- name: Ensure Alloy container network is created via ansible.builtin.command
+  when: devture_systemd_docker_base_container_network_creation_method == 'command'
+  ansible.builtin.command:
+    cmd: >-
+      {{ devture_systemd_docker_base_host_command_docker }} network create
+      {% if devture_systemd_docker_base_ipv6_enabled %}--ipv6{% endif %}
+      {{ devture_systemd_docker_base_container_networks_driver_options_string }}
+      {{ alloy_container_network }}
+  register: alloy_network_creation_result
+  changed_when: alloy_network_creation_result.rc == 0
+  failed_when: alloy_network_creation_result.rc != 0 and 'already exists' not in alloy_network_creation_result.stderr
+
+- name: Ensure Alloy systemd service is present
+  ansible.builtin.template:
+    src: "{{ role_path }}/templates/systemd/alloy.service.j2"
+    dest: "{{ devture_systemd_docker_base_systemd_path }}/{{ alloy_identifier }}.service"
+    mode: "0644"
+  register: alloy_systemd_service_result
+
+- name: Determine whether Alloy needs a restart
+  ansible.builtin.set_fact:
+    alloy_restart_necessary: >-
+      {{
+        alloy_support_files_result.changed | default(false)
+        or alloy_config_file_result.changed | default(false)
+        or alloy_systemd_service_result.changed | default(false)
+        or alloy_container_image_pull_result_ansible_module.changed | default(false)
+        or alloy_container_image_pull_result_command.changed | default(false)
+      }}

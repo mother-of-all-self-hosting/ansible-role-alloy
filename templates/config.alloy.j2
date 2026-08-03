@@ -1,0 +1,157 @@
+// SPDX-FileCopyrightText: 2024, 2026 sudo-Tiz
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+logging {
+  level  = {{ alloy_config_logging_level | to_json }}
+  format = {{ alloy_config_logging_format | to_json }}
+}
+
+////////////////////////////////////////////////////////////////////////////
+//
+// loki.write - ships collected logs to one or more Loki-compatible endpoints
+//
+////////////////////////////////////////////////////////////////////////////
+
+loki.write "default" {
+{% for client in alloy_config_clients %}
+  endpoint {
+    url = {{ client.url | to_json }}
+{% if client.tenant_id | default('') %}
+    tenant_id = {{ client.tenant_id | to_json }}
+{% endif %}
+{% if client.basic_auth is defined and client.basic_auth %}
+    basic_auth {
+      username = {{ client.basic_auth.username | to_json }}
+      password = {{ client.basic_auth.password | to_json }}
+    }
+{% endif %}
+{% if client.headers is defined and client.headers %}
+    headers = {
+{% for key, value in client.headers.items() %}
+      {{ key }} = {{ value | to_json }},
+{% endfor %}
+    }
+{% endif %}
+{% if client.tls_ca_file | default('') or client.tls_insecure_skip_verify is defined %}
+    tls_config {
+{% if client.tls_ca_file | default('') %}
+      ca_file = {{ client.tls_ca_file | to_json }}
+{% endif %}
+{% if client.tls_insecure_skip_verify is defined %}
+      insecure_skip_verify = {{ client.tls_insecure_skip_verify | to_json }}
+{% endif %}
+    }
+{% endif %}
+  }
+{% endfor %}
+}
+
+////////////////////////////////////////////////////////////////////////////
+//
+// /loki.write
+//
+////////////////////////////////////////////////////////////////////////////
+
+{% for scraper in alloy_journald_scrapers %}
+////////////////////////////////////////////////////////////////////////////
+//
+// journald scraper: {{ scraper.name }}
+//
+////////////////////////////////////////////////////////////////////////////
+
+loki.relabel "journal_{{ scraper.name }}" {
+  forward_to = []
+
+  rule {
+    source_labels = ["__journal__systemd_unit"]
+    target_label  = "unit"
+  }
+
+  rule {
+    source_labels = ["__journal__hostname"]
+    target_label  = "host"
+  }
+
+  rule {
+    source_labels = ["__journal_priority_keyword"]
+    target_label  = "level"
+  }
+
+  rule {
+    source_labels = ["__journal_syslog_identifier"]
+    target_label  = "syslog_identifier"
+  }
+
+  rule {
+    action        = "drop"
+    source_labels = ["unit"]
+    regex         = {{ scraper.relabel_drop_regex | to_json }}
+  }
+
+  rule {
+    action        = "keep"
+    source_labels = ["unit"]
+    regex         = {{ scraper.relabel_keep_regex | to_json }}
+  }
+{% if scraper.relabel_rules_extra | default('') %}
+
+  {{ scraper.relabel_rules_extra | indent(2) }}
+{% endif %}
+}
+
+loki.source.journal "{{ scraper.name }}" {
+  forward_to     = [{{ scraper.forward_to | join(', ') }}]
+  relabel_rules  = loki.relabel.journal_{{ scraper.name }}.rules
+  format_as_json = {{ scraper.json | to_json }}
+  max_age        = {{ scraper.max_age | to_json }}
+  path           = {{ scraper.path | to_json }}
+{% if scraper.matches | default('') %}
+  matches        = {{ scraper.matches | to_json }}
+{% endif %}
+  labels = {
+{% for key, value in scraper.labels.items() %}
+    {{ key }} = {{ value | to_json }},
+{% endfor %}
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////
+//
+// /journald scraper: {{ scraper.name }}
+//
+////////////////////////////////////////////////////////////////////////////
+{% endfor %}
+
+{% for scraper in alloy_varlog_scrapers %}
+////////////////////////////////////////////////////////////////////////////
+//
+// varlog scraper: {{ scraper.name }}
+//
+////////////////////////////////////////////////////////////////////////////
+
+loki.source.file "{{ scraper.name }}" {
+  targets = [
+    {
+      __path__ = {{ scraper.path | to_json }},
+{% for key, value in scraper.labels.items() %}
+      {{ key }} = {{ value | to_json }},
+{% endfor %}
+    },
+  ]
+
+  forward_to = [{{ scraper.forward_to | join(', ') }}]
+
+  file_match {
+    enabled     = true
+    sync_period = {{ scraper.sync_period | to_json }}
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////
+//
+// /varlog scraper: {{ scraper.name }}
+//
+////////////////////////////////////////////////////////////////////////////
+{% endfor %}
+

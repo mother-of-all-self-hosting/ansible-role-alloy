@@ -1,0 +1,27 @@
+# SPDX-FileCopyrightText: 2023 Slavi Pantaleev
+# SPDX-FileCopyrightText: 2024, 2026 sudo-Tiz
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+---
+- name: Perform Alloy installation tasks
+  when: alloy_enabled | bool
+  tags:
+    - setup-all
+    - setup-alloy
+    - install-all
+    - install-alloy
+  block:
+    - name: Validate Alloy configuration
+      ansible.builtin.include_tasks: "{{ role_path }}/tasks/validate_config.yml"
+    - name: Install Alloy
+      ansible.builtin.include_tasks: "{{ role_path }}/tasks/install.yml"
+
+- name: Perform Alloy uninstallation tasks
+  when: not alloy_enabled | bool
+  tags:
+    - setup-all
+    - setup-alloy
+  block:
+    - name: Uninstall Alloy
+      ansible.builtin.include_tasks: "{{ role_path }}/tasks/uninstall.yml"
