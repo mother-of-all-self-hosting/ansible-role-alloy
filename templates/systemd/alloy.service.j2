@@ -45,8 +45,8 @@ ExecStartPre={{ devture_systemd_docker_base_host_command_docker }} create \
       --label-file={{ alloy_base_path }}/labels \
       --mount type=bind,src={{ alloy_config_path }},dst=/etc/alloy,ro \
       --mount type=bind,src={{ alloy_data_path }},dst=/data \
-      {% for mount in alloy_container_additional_volumes %}
-      --mount {{ mount }} \
+      {% for volume in alloy_container_additional_volumes %}
+      --mount type={{ volume.type | default('bind' if '/' in volume.src else 'volume') }},src={{ volume.src }},dst={{ volume.dst }}{{ (',' + volume.options) if volume.options | default('') else '' }} \
       {% endfor %}
       {% for arg in alloy_container_extra_arguments %}
       {{ arg }} \
@@ -56,7 +56,7 @@ ExecStartPre={{ devture_systemd_docker_base_host_command_docker }} create \
       --server.http.listen-addr=0.0.0.0:{{ alloy_config_http_listen_port }} \
       --server.http.ui-path-prefix={{ alloy_path_prefix }} \
       --storage.path=/data \
-      {% for arg in alloy_container_run_extra_arguments %}
+      {% for arg in alloy_process_extra_arguments %}
       {{ arg }} \
       {% endfor %}
       /etc/alloy/config.alloy

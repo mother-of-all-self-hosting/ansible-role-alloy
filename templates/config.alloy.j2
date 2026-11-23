@@ -1,6 +1,8 @@
-// SPDX-FileCopyrightText: 2024, 2026 sudo-Tiz
-//
-// SPDX-License-Identifier: AGPL-3.0-or-later
+{#
+SPDX-FileCopyrightText: 2024, 2026 sudo-Tiz
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+#}
 
 logging {
   level  = {{ alloy_config_logging_level | to_json }}
@@ -29,7 +31,7 @@ loki.write "default" {
 {% if client.headers is defined and client.headers %}
     headers = {
 {% for key, value in client.headers.items() %}
-      {{ key }} = {{ value | to_json }},
+      {{ key | to_json }} = {{ value | to_json }},
 {% endfor %}
     }
 {% endif %}
@@ -134,6 +136,9 @@ loki.source.file "{{ scraper.name }}" {
   targets = [
     {
       __path__ = {{ scraper.path | to_json }},
+{% if scraper.path_exclude | default('') %}
+      __path_exclude__ = {{ scraper.path_exclude | to_json }},
+{% endif %}
 {% for key, value in scraper.labels.items() %}
       {{ key }} = {{ value | to_json }},
 {% endfor %}
