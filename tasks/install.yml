@@ -86,6 +86,9 @@
     mode: "0644"
   register: alloy_systemd_service_result
 
+- name: Determine whether Alloy container is stale
+  ansible.builtin.include_tasks: "{{ role_path }}/tasks/util/determine_container_staleness.yml"
+
 - name: Determine whether Alloy needs a restart
   ansible.builtin.set_fact:
     alloy_restart_necessary: >-
@@ -95,4 +98,5 @@
         or alloy_systemd_service_result.changed | default(false)
         or alloy_container_image_pull_result_ansible_module.changed | default(false)
         or alloy_container_image_pull_result_command.changed | default(false)
+        or alloy_container_stale | bool
       }}
